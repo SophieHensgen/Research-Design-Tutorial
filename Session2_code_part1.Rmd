@@ -1,0 +1,162 @@
+---
+title: "Session2_code_part1"
+author: "Frederic Gerdon"
+date: "8 October 2020"
+output: html_document
+---
+
+```{r}
+# Load package(s)
+library(tidyverse)
+```
+
+Imagine that there's a big, local company with 2,000 employees. It took in people who came to Germany as refugees within the past few years, such that 200 employees are (former) refugees. You, as a social scientist, want to find out whether the refugees earn as much money as the other employees in the company. The company agrees to inform you about the salary of 300 employees. 
+
+The dataset contains full information on the whole population of 2,000 employees: (a) refugee / no refugee; (b) gender; (c) salary.
+
+```{r}
+# Load data
+data <- readRDS("/Users/sophiehensgen/Webscraping-LS-Methode/Research-Design-Tutorial/S2_data.sec")
+# Need to adjust the path?
+getwd() # Get working directory
+# setwd("...") # Set working directory
+```
+
+```{r}
+# Inspecting the data
+View(data)
+str(data)
+summary(data)
+```
+
+## Mean values in the population
+```{r}
+# Overall mean
+mean(data$Salary)
+
+# Mean for sub-groups
+data %>%
+  group_by(Refugee) %>%
+  summarise(mean = mean(Salary))
+```
+
+## Simple random sampling and sample sizes
+```{r}
+# Mean values for samples of different sample sizes
+data.s1 <- sample_n(data, 50) # 50 observations
+mean(data.s1$Salary)
+mean(data$Salary)
+
+data.s2 <- sample_n(data, 20) # 20 observations, random sample
+mean(data.s2$Salary)
+
+data.s3 <- sample_n(data, 500) # 500 observations, random sample
+mean(data.s3$Salary)
+```
+
+```{r}
+# Using for loops to calculate mean values of different sample sizes 
+sample.size <- c(5, 10, 50, 80, 100, 200, 500)
+
+means.compared <- data.frame() # define a empty object (can be a data frame but don't have to)
+
+
+for(i in sample.size){ # could also use nrow() or just 1:2000 or so
+  data.i <- sample_n(data, i) # Draw a sample of size i
+  new.row <- c(i, mean(data.i$Salary)) # Create new vector that contains n and mean
+  means.compared <- rbind(means.compared, new.row) # Add this vector to the data frame, rbind you bind rows to a already excisting data frame
+}
+
+names(means.compared) <- c("n", "mean") # Naming the columns
+
+means.compared
+```
+
+here you can see that the increase in fluctuation happens in the higher sample sizes
+```{r}
+# Visualization of mean values with increasing n
+ggplot(means.compared, aes(x = n, y = mean)) +
+  geom_line() +
+  geom_hline(yintercept = 2382.241, color = "blue", linetype = "dashed")
+# Can you find a more general way to indicate the true mean of the population (to draw the horizontal line)?
+```
+
+
+## TEAMWORK:
+
+Imagine that the company gives you an anonymous list of 2,000 employees, but without the information on salaries. You may get the information on salaries only for a sample of 300 individuals. You draw samples to choose the employees whose salaries you would like to know.
+a) Draw a simple random sample of 300 employees. Calculate mean values of salary (for refugees and non-refugees) and the share of refugees in the sample.
+b) Now use stratified sampling (refugees/non-refugees) to draw a sample of 300 employees (hint: you know a dplyr function that helps you to draw a stratified sample!). Calculate the mean values of salary for refugees and non-refugees.
+c) Calculate (and, if you have the time: plot) the mean values of samples with different sample sizes (below and above 300 employees), considering stratification.
+
+```{r}
+# Now it's your turn to write code!
+# a)
+
+data.team <- sample_n(data, 300) # 300 observations, random sample
+
+ref_mean <- data.team %>%
+  group_by(Refugee) %>%
+  summarize(Salary_mean = mean(Salary)) 
+  
+ref_count <- data.team %>%
+  count(Refugee)  
+
+ref_mean <- as.data.frame(ref_mean)
+class(ref_mean)
+
+ref_complete <- ref_mean %>% full_join(ref_count, by = "Refugee")
+
+ref_complete
+
+```
+
+```{r}
+# Now it's your turn to write code!
+# b)
+
+data.strat <- data %>%
+  group_by(Refugee) %>%
+  sample_n(150)
+
+data.strat
+```
+
+## Adding systematic and random error: overreporting among men, realistic reporting among women
+
+Imagine that the company did not provide you with any information on the salary of their employees (privacy and data protection!) but will allow you to speak with 300 employees whom you may ask about their salary. This time, you are interested in comparing salaries between men and women.
+Given that you now have to rely on information given by employees, you are worried about measurement error in salaries. 
+
+Conduct t-test and/or linear regressions (or other analysis techniques?) to check for differences in salaries between men and women. At which values for overreporting of men do these analyses show statistically (in)significant results?
+
+OR(/AND)
+
+Show how the mean values develop with increasing sample size (for-loops; if you are advanced: plot with ggplot2).
+
+```{r}
+data <- data %>%
+  mutate(Salary_rand_err = Salary + sample(x = c(1:100), 1, replace = TRUE),
+    Salary_sys_err = ifelse(Sex=="Male", Salary + 120, Salary)) # You can change the extent of overreporting for men here
+```
+
+```{r}
+# T-tests and OLS regression
+# Now it's your time to code again!
+
+# Variables of interest: data$Salary, data$Salary_rand_err, data$Salary_sys_err, data$Sex
+
+# t-test general form: t.test(x ~ y)
+t.test(data$Salary ~ data$Sex)
+
+# OLS general form: lm(outcome ~ variables, data = data)
+model.1 <- lm(Salary ~ Sex, data = data)
+
+# you can use the package "stargazer" to have nicely formatted regression results:
+# install.packages("stargazer")
+library(stargazer)
+# stargazer(MODEL.1, MODEL.2, type = "text")
+```
+
+```{r}
+# Check previous code on for-loops and ggplot2 to show how the mean values develop with increasing sample size.
+```

@@ -1,0 +1,175 @@
+---
+title: "Session4_Code"
+author: "Frederic Gerdon"
+date: "22 October 2020"
+output: html_document
+---
+
+
+```{r}
+# Load packages
+
+# install.packages("stargazer")
+# install.packages("randomizr")
+
+library(tidyverse)
+library(stargazer)
+library(randomizr)
+```
+
+```{r}
+data <- readRDS("Session4_Data")
+
+View(data)
+```
+
+
+## Balance
+
+Randomization does not automatically ensure that treatment and control groups are of equal composition with respect to observed (and unobserved) characteristics. Let's check today's data.
+
+### Table A5
+What is the mean value of age and the proportion of sex within treatment and control group (in this case: those we received a fake or real source in report 1)?
+```{r}
+# Treatment: source
+# We need to calculate mean/proportion values of age and sex depending on the treatment
+
+
+data %>%
+  group_by(treatment_source) %>%
+  summarise(mean.age = mean(age),
+            prop.sex = mean(sex_num))
+```
+
+Now we found the values. Is this difference statistically significant? How can we find this out?
+
+```{r}
+# T-test: t.test(VARIABLE.A ~ VARIABLE.B)
+
+t.test(data$age ~ data$treatment_source)
+t.test(data$sex_num ~ data$treatment_source)
+```
+
+Imagine we conduct this experiment for the first time, with the exact same pool of participants that is available in our data. We could randomly assign the source treatment to participants again and check whether we can achieve a better balance.
+
+```{r}
+# Let's first reduce our data set so we only work with the relevant variables that we need right now.
+
+data.r <- select(data, id, age, sex_num, treatment_source)
+table(data.r$treatment_source)
+
+# Now let's use the function simple_ra (package: randomizr) to randomly assign each individual to either treatment or control group (Bernoulli)
+data.r$treatment_simple <- simple_ra(N = nrow(data.r))
+table(data.r$treatment_simple)
+View(data.r)
+
+t.test(data.r$age ~ data.r$treatment_simple)
+t.test(data.r$sex_num ~ data.r$treatment_simple)
+
+# Completely randomized experiment
+data.r$treatment_complete <- complete_ra(N = nrow(data.r))
+table(data.r$treatment_complete)
+
+t.test(data.r$age ~ data.r$treatment_complete)
+t.test(data.r$sex_num ~ data.r$treatment_complete)
+```
+
+
+## Regression analysis (OLS)
+
+Now, let's analyze whether the source treatment (real/fake) affected the belief in the source. One way to do this is an OLS regression.
+
+### Table A11
+
+```{r}
+# OLS in R: lm(DEPENDENT.VAR/OUTCOME ~ INDEPENDENT.VAR(S)/TREATMENT, data = XX)
+# Outcome: belief (belief_report_1_num)
+# Treatment: source (treatment_source)
+
+h1a_lm <- lm(belief_report_1_num ~ treatment_source, data = data)
+
+# Display the output
+summary(h1a_lm)
+
+# Display the output in an even nicer way
+stargazer(h1a_lm, type = "text")
+stargazer(h1a_lm, type = "html", out = "h1a_lm.html")
+# You can also list more than one model in the brackets to display different models within one table
+```
+
+What does this result mean? Think about the mean values of the outcome for different groups!
+
+```{r}
+mean(data$belief_report_1_num[data$treatment_source==0], na.rm = TRUE)
+mean(data$belief_report_1_num[data$treatment_source==1], na.rm = TRUE)
+t.test(data$belief_report_1_num ~ data$treatment_source)
+```
+
+
+
+Tasks:
+
+1) Use complete_ra to assign participants to treatment and control group. Check the balance for age and sex (t-tests!). Repeat the procedure 3-5 times and check how often the p-value is below 0.1.
+
+2) Calculate the remaining models that are shown in Table A11. The outcome variables are:
+* share_report_1_email_num
+* share_report_1_fb_num
+* share_report_1_twitter_num
+* share_report_1_whatsapp_num
+Display the results by using stargazer.
+
+3) If you still have time: Calculate separate OLS regression models for different age groups to examine the effect of source on belief. The age spans (variable: age) to be investigated separately are:
+* age below 40
+* age 40 to 70
+* age above 70
+Use the function lm, but add the following argument into the brackets: subset = age < 40. This will calculate models including only the subset of people that are younger than 40. Use the operators (<, >, <=, >=) you learned at Datacamp to subset your data to run models for all three groups mentioned above. Then compare these regression results with Panel C in Figure 7 (slide 12). Are your results compatible with the results shown in Panel C?
+
+4) Bonus task, if you still have time: Using stargazer, try to customize the table such that it looks as similar as possible to Table A11 as it is shown in the paper (labels, values displayed, etc.). Run the code “?stargazer” to get a list of arguments that you may use to this end. Several arguments that you may use are listed below.
+
+
+## Exercise 1
+
+```{r}
+
+```
+
+
+## Exercise 2
+
+```{r}
+
+```
+
+
+## Exercise 3
+
+```{r}
+h1a_lm_l <- lm(belief_report_1_num ~ treatment_source, data = data,
+               subset = data$age < 40)
+```
+
+
+## Exercise 4
+
+Arguments you can use:
+stargazer([MODELS SEPARATED BY COMMA],
+  type = ...,
+  omit.stat = ...,
+  digits = ...,
+  title = ...,
+  align = ...,
+  dep.var.caption = ...,
+  dep.var.labels = c(...),
+  covariate.labels = c(...),
+  model.names = ...,
+  model.numbers = ...,
+  star.cutoffs = c(...), star.char = c(...),
+  notes.append = ...,
+  notes = c(...),
+  header = ...,
+  out = ...
+)
+```{r}
+# Information on the arguments:
+?stargazer
+```

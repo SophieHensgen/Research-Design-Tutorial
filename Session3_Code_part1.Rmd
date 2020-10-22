@@ -1,0 +1,253 @@
+---
+title: "Session3_code"
+author: "Frederic Gerdon"
+date: "15 October 2020"
+output: html_document
+---
+
+## Creating data frames with hypothetical and observed experimental data
+
+Let us assume we have data from an experiment investigating the effects of receiving additional tutoring (treatment: 0 = no additional tutoring, 1 = additional tutoring) on passing an exam (outcome: 0 = failing, 1 = passing). The students were randomly allocated to either receiving the additional tutoring or not.
+
+```{r, include=FALSE}
+# Hypothetical data set, if we could observe all potential outcomes:
+all.data <- data.frame(Unit = c(1:12),
+                  Di = c(1,1,1,1,0,0,0,0,0,0,0,0),
+                  Yi1 = c(1,0,1,1,0,0,1,1,1,1,1,1),
+                  Yi0 = c(1,0,0,0,0,0,1,1,0,0,0,0),
+                  Attitude = as.factor(rep(c("Lazy", "Lazy", "Diligent", "Diligent"), 3)),
+                  Hand = as.factor(rep(c("Left-handed", "Right-handed"), 6)))
+
+# Data set only containing the actual observations made (reality):
+obs.data <- data.frame(Unit = c(1:12),
+                  Di = c(1,1,1,1,0,0,0,0,0,0,0,0),
+                  Yi = c(1,0,1,1,0,0,1,1,0,0,0,0),
+                  Yi1 = c(1,0,1,1,NA,NA,NA,NA,NA,NA,NA,NA),
+                  Yi0 = c(NA,NA,NA,NA,0,0,1,1,0,0,0,0),
+                  Attitude = as.factor(rep(c("Lazy", "Lazy", "Diligent", "Diligent"), 3)),
+                  Hand = as.factor(rep(c("Left-handed", "Right-handed"), 6)))
+
+
+# Let's inspect the data:
+View(all.data)
+View(obs.data)
+```
+
+
+## Calculate ATE
+
+```{r}
+# How can we calculate the ATE with all.data?
+# E[Yi1−Yi0]
+
+
+
+mean(all.data$Yi1)
+mean(all.data$Yi0)
+
+# How do we calculate the ATE with our hypothetical data ("all.data")?
+# You can use R like a calculator
+
+
+ATE.all <- mean(all.data$Yi1) - mean(all.data$Yi0) 
+
+
+# We now calculate the naïve ATE with our observed data ("obs.data"):
+
+ATE.obs <- mean(obs.data$Yi1, na.rm = TRUE) - mean(obs.data$Yi0, na.rm = TRUE)
+# What is the problem with the previous line of code?
+ATE.obs
+
+
+
+ATE.obs <- mean(obs.data$Yi1, na.rm = TRUE) - mean(obs.data$Yi0, na.rm = TRUE) 
+
+ATE.obs2 <- mean(obs.data$Yi[obs.data$Di==1]) - mean(obs.data$Yi[obs.data$Di==0]) 
+
+
+paste("ATE (observed):", ATE.obs)
+paste("ATE (all):", ATE.all)
+```
+
+## Calculate ATT
+
+```{r}
+# How do we calculate the ATT with our hypothetical data ("all.data")?
+
+
+
+# E[Yi1|Di=1] − E[Yi0|Di=1]
+
+
+# How can we modify the code we used to calculate the ATE.all in order to calculate the ATT.all?
+
+mean(all.data$Yi1) - mean(all.data$Yi0) 
+
+ATT.all <- mean(all.data$Yi1[all.data$Di==1]) - mean(all.data$Yi0[all.data$Di==1])
+ATT.all
+
+mean(obs.data$Yi1[obs.data$Di==1])
+
+```
+
+## Calculate ATC
+
+```{r}
+# Based on the previous code, how could we calculate the ATC (all)? Try to calculate the ATC by yourself!
+
+
+ATC.all <- mean(all.data$Yi1[all.data$Di==0]) - mean(all.data$Yi0[all.data$Di==0])
+ATC.all
+
+mean(obs.data$Yi0[obs.data$Di==0])
+
+```
+
+## Calculate ATE by using ATT and ATC
+
+```{r}
+# We can also use the ATT and ATC to calculate the ATE. How?
+ATE.all2 <- 0.33*ATT.all + 0.66*ATC.all
+```
+
+## Calculate ATE for subgroups
+
+Sometimes, we are interested in treatment effects for specific subgroups. Let's find out how additional tutoring affects the passing of the exam for lazy students.
+
+```{r}
+# We could just filter the data set using dplyr. Here, we choose a different approach.
+
+# Previously: ATE.all <- mean(all.data$Yi1) - mean(all.data$Yi0) 
+
+ATE.all.sub1 <- mean(all.data$Yi1[all.data$Attitude=="Lazy"]) - mean(all.data$Yi0[all.data$Attitude=="Lazy"]) 
+
+
+ATE.obs.sub1 <- mean(obs.data$Yi[obs.data$Attitude=="Lazy" & obs.data$Di==1]) - mean(obs.data$Yi[obs.data$Attitude=="Lazy" & obs.data$Di==0]) 
+
+paste("ATE (all):", ATE.all.sub1)
+paste("ATE (observed):", ATE.obs.sub1)
+```
+
+## Calculate ATT for subgroups
+
+```{r}
+ATT.all.sub1 <- mean(all.data$Yi1[all.data$Di==1 & all.data$Attitude=="Lazy"]) -
+  mean(all.data$Yi0[all.data$Di==1 & all.data$Attitude=="Lazy"])
+ATT.all.sub1
+
+mean(obs.data$Yi1[obs.data$Di==1 & all.data$Attitude=="Lazy"])
+
+# Based on the code within this chunk, how could we calculate the ATC?
+```
+
+## Calculate ATC for subgroups
+
+```{r}
+ATC.all.sub1 <- mean(all.data$Yi1[all.data$Di==0 & all.data$Attitude=="Lazy"]) -
+  mean(all.data$Yi0[all.data$Di==0 & all.data$Attitude=="Lazy"])
+ATC.all.sub1
+
+mean(obs.data$Yi0[obs.data$Di==0 & all.data$Attitude=="Lazy"])
+```
+
+```{r}
+# Alternative ATE calculation
+ATE.all.sub1.2 <- (1/3)*ATT.all.sub1 + (2/3)*ATC.all.sub1
+
+paste("ATE (all):", ATE.all.sub1.2)
+paste("ATE (observed):", ATE.obs.sub1)
+# Why is there a difference between observed/naïve and true ATE here?
+```
+
+## Tasks
+
+1) Please calculate the ATE, ATT, and ATC (or means) for left-handed students, drawing on both data frames (all.data and obs.data).
+2) If you have the time: Try to calculate the ATE for left- and for right-handed students by using dplyr (in less than 10 lines of code), either for all.data or obs.data. Hint: group_by, summarize, mean; don't forget to load the library dplyr or tidyverse.
+3) If you still have time: Run the regressions (see below) and think about how the coefficients reflect mean values found in the data frame obs.data. To which mean values in the table do the coefficients correspond? It might help to write down the regression equations. Ignore the p values for now.
+
+## Exercise 1
+
+```{r}
+# Exercise 1
+# Remember: ATE.all.sub1 <- mean(all.data$Yi1[all.data$Attitude=="Lazy"]) - mean(all.data$Yi0[all.data$Attitude=="Lazy"]) 
+
+#ATC
+ATC.all.left <- mean(all.data$Yi1[all.data$Di==0 & all.data$Hand=="Left-handed"]) -
+  mean(all.data$Yi0[all.data$Di==0 & all.data$Hand=="Left-handed"])
+
+ATC.all.left
+
+ATC.obs.left <- mean(obs.data$Yi[obs.data$Di==0 & obs.data$Hand=="Left-handed"]) -
+  mean(obs.data$Yi0[obs.data$Di==0 & obs.data$Hand=="Left-handed"])
+
+ATC.obs.left
+
+#ATT
+
+ATT.all.left <- mean(all.data$Yi1[all.data$Di==1 & all.data$Hand=="Left-handed"]) -
+  mean(all.data$Yi0[all.data$Di==1 & all.data$Hand=="Left-handed"])
+paste("ATT (all), Left:", ATT.all.Left)
+
+
+ATT.obs.left <- mean(obs.data$Yi[obs.data$Hand=="Left-handed" & obs.data$Di==1]) - mean(obs.data$Yi[obs.data$Hand=="Left-handed" & obs.data$Di==0], na.rm = TRUE) 
+
+ATT.obs.left
+
+# ATE
+
+## here has to be something wrong, not the same outcomes as below!
+ATE.all.left <-  4/12 * ATT.all.left + 8/12 * ATC.all.left
+ATE.all.left
+ATE.obs.left <-  4/12 * ATT.obs.left + 8/12 * ATC.obs.left
+ATE.obs.left
+
+## correct
+ATE.all.left <- mean(all.data$Yi1[all.data$Hand=="Left-handed"]) - mean(all.data$Yi0[all.data$Hand=="Left-handed"]) 
+
+ATE.all.left
+
+ATE.obs.left <- mean(obs.data$Yi[obs.data$Hand=="Left-handed" & obs.data$Di==1]) - mean(obs.data$Yi[obs.data$Hand=="Left-handed" & obs.data$Di==0], na.rm = TRUE) 
+
+ATE.obs.left
+
+```
+
+## Exercise 2
+
+```{r}
+library(dplyr)
+library(tidyverse)
+
+```
+
+```{r}
+
+# use: group_by, summarize, mean
+
+# ATE
+
+ATE.all.tab <- all.data %>%
+  group_by(Hand) %>%
+  summarize(mean.Yi0 = mean(Yi0),
+            mean.Yi1 = mean(Yi1),
+            ATE = mean(Yi1) - mean(Yi0))
+ATE.all.tab
+
+ATE.obs.tab <- obs.data %>%
+  group_by(Hand) %>%
+  summarize(mean.Yi1 = mean(Yi1, na.rm = TRUE),
+            mean.Yi0 = mean(Yi0, na.rm = TRUE),
+            ATE = mean(Yi1, na.rm = TRUE) - mean(Yi0, na.rm = TRUE))
+ATE.obs.tab
+
+
+```
+
+## Exercise 3
+
+```{r}
+library(stargazer)
+model.A <- lm(Yi ~ Di, data = obs.data)
+model.B <- lm(Yi ~ Di + Attitude, data = obs.data)
+stargazer(model.A, model.B, type = "text")
+```

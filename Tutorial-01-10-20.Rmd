@@ -1,0 +1,82 @@
+---
+title: "Research Design - Tutorial"
+author: "Sophie Hensgen"
+date: "10/1/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(dplyr)
+UCBAdmissions
+```
+
+```{r insepction, include=FALSE}
+UCBAdmissions #dataset from UC Berkely
+
+str(UCBAdmissions) #look at the structure
+
+UCBA <- as.data.frame(UCBAdmissions) #to have it as a data set
+
+str(UCBA)
+```
+
+```{r Reconfiguration, include=FALSE}
+
+Adm.Gender <- UCBA%>%
+  group_by(Gender, Admit) %>%
+  summarise(Gend.Freq = sum(Freq))
+
+Adm.Gender %>%
+  group_by(Gender) %>%
+  mutate(Rate = Gend.Freq/sum(Gend.Freq))
+  
+```
+
+```{r ex 1, include=FALSE}
+
+Adm.Depart <- UCBA%>%
+  group_by(Dept, Admit) %>%
+  summarise(Depart.Freq = sum(Freq))
+  
+Adm.Depart %>%
+  group_by(Dept) %>%
+  mutate(Rate = Depart.Freq/sum(Depart.Freq))
+
+Adm.Depart
+```
+
+```{r ex 2, include=FALSE}
+
+Adm.Depart.Gender <- UCBA%>%
+  group_by(Dept, Admit, Gender) %>%
+  summarise(Depart.Gender.Freq = sum(Freq))
+ 
+Adm.Depart.Gender 
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
