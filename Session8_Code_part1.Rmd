@@ -149,15 +149,17 @@ Different matching and weighting procedures (including propensity score matching
 If TRUE (default), treats NAs as an own value that is matched on. If FALSE, missings in treatment data are not allowed.
 
 ### listwise.delete
-Listwise deletion of cases when there are NAs (default: FALSE).
+List-wise deletion of cases when there are NAs (default: FALSE).
 
 ```{r}
+# no refinement for this example
+
 PM_results_none <- PanelMatch(time.id = "time", unit.id = "unit",
                               treatment = "threat", outcome.var = "trust",
-                              lag = 2, lead = 0,
+                              lag = 2, lead = 0, # substantive consideration, so what does make sense here? 
                               refinement.method = "none", 
                               data = data,
-                              match.missing = TRUE,
+                              match.missing = TRUE, # match on missings as they would be were observation
                               qoi = "att",
                               listwise.delete = FALSE) 
 
@@ -221,11 +223,11 @@ PM_results_ps <- PanelMatch(
   lag = 2, lead = 0,
   time.id = "time", unit.id = "unit", 
   treatment = "threat", outcome.var = "trust",
-  refinement.method = "ps.match",  # !
+  refinement.method = "ps.match",  # ! propensity score matching
   data = data, 
   match.missing = FALSE,
   covs.formula = ~ education + age + male + income, # !
-  size.match = 1, # !
+  size.match = 1, # ! can change how many matches we get and how they are weight. 
   qoi = "att"
   )
 
@@ -278,7 +280,7 @@ PM_results_F2 <- PanelMatch(
   data = data, 
   match.missing = FALSE,
   qoi = "att",
-  forbid.treatment.reversal = TRUE 
+  forbid.treatment.reversal = TRUE # we dont want a treatment reversal between the leads
   )
 
 msets_F2 <- PM_results_F2$att
@@ -314,7 +316,14 @@ We still should not put too much confidence in these results: balance far from p
 ## Tasks
 
 1) Each of you should do the Task 1 individually for five minutes, then discuss your current state of results in the group!
-a) Perform matching with a lag of 2 and a lead of 1. As a matching method, use propensity score matching for all available covariates, except for income (do not match on income). Do not match on missings and do not apply listwise deletion of cases. Do not allow for reversal of treatment. Only allow up to 10 control units to be matched to a treatment unit.
+a) 
+- Perform matching with a lag of 2 and a lead of 1. 
+- As a matching method, use propensity score matching for all available covariates, except for income (do not match on income). 
+- Do not match on missings 
+- and do not apply listwise deletion of cases. 
+- Do not allow for reversal of treatment. 
+- Only allow up to 10 control units to be matched to a treatment unit.
+
 b) After matching, check the balance (also for income) and calculate the ATT. Report your ATT estimate in the Etherpad.
 
 2) Set the lead to 0. Freely choose a value for lags (1-3).
@@ -333,17 +342,19 @@ Report in the Etherpad for how many treated units a match can be found, given di
 
 ```{r}
 PM_results_task1 <- PanelMatch(
-  lag = ..., lead = ...,
+  lag = 3, lead = 0,
   time.id = "time", unit.id = "unit", 
   treatment = "threat", outcome.var = "trust",
-  refinement.method = "...", 
+  refinement.method = "ps.match", 
   data = data, 
-  match.missing = ...,
-  listwise.delete = ...,
-  covs.formula = ...,
-  size.match = ...,
-  forbid.treatment.reversal = ...,
+  match.missing = FALSE,
+  listwise.delete = FALSE,
+  covs.formula = ~ education + age + male,
+  size.match = 10,
+  forbid.treatment.reversal = TRUE,
   qoi = "att" ,)
+
+?PanelMatch
 
 msets_task1 <- PM_results_task1$att
 summary(msets_task1)
@@ -352,17 +363,17 @@ summary(msets_task1)
 ### 2. Check balance
 
 ```{r}
-get_covariate_balance(matched.sets = ...,
+get_covariate_balance(matched.sets = msets_task1,
                       data = data,
-                      covariates = ...,
-                      plot = ...)
+                      covariates = c("education", "age", "male", "income"),
+                      plot = TRUE)
 ```
 
 
 ### 3. Estimate causal quantity
 
 ```{r}
-PE_results_task1 <- PanelEstimate(...)
+PE_results_task1 <- PanelEstimate(sets = PM_results_task1, data = data)
 
 summary(PE_results_task1)
 plot(PE_results_task1)
