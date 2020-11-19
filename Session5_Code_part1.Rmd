@@ -1,0 +1,294 @@
+---
+title: "Session5_Code"
+author: "Frederic Gerdon"
+date: "29 October 2020"
+output: html_document
+---
+
+```{r}
+# Make sure to have all packages installed!
+
+library(haven)
+library(Matching)
+library(stargazer)
+library(tidyverse)
+```
+
+```{r}
+# Load data
+NSW <- read_stata("nsw_dw.dta")
+
+psid1 <- read_stata("psid_controls.dta")
+```
+
+
+## Table 1, re74 subset:
+
+```{r}
+NSW %>%
+  group_by(treat) %>%
+  summarise(mean.age = mean(age),
+            mean.edu = mean(education),
+            mean.re74 = mean(re74),
+            mean.re75 = mean(re75),
+            prop.black = mean(black),
+            prop.hispanic = mean(hispanic),
+            prop.nodegree = mean(nodegree),
+            prop.married = mean(married))
+```
+
+
+```{r}
+psid1 %>%
+  summarise(mean.age = mean(age),
+            mean.edu = mean(education),
+            mean.re74 = mean(re74),
+            mean.re75 = mean(re75),
+            prop.black = mean(black),
+            prop.hispanic = mean(hispanic),
+            prop.ndegree = mean(nodegree),
+            prop.married = mean(married))
+```
+
+
+## Are these differences significant?
+
+```{r}
+# We already know the t.test
+t.test(NSW$age ~ NSW$treat)
+t.test(NSW$nodegree ~ NSW$treat)
+```
+
+
+## Table 3, NSW: experimental treatment effect
+
+```{r}
+# Run OLS regression for column 1
+Tab3.NSW.1 <- lm(re78 ~ treat, data = NSW)
+stargazer(Tab3.NSW.1, type = "text")
+
+# Difference in means between treatment and control group
+mean(NSW$re78[NSW$treat==1]) - mean(NSW$re78[NSW$treat==0])
+```
+
+```{r}
+# Run OLS regression for column 2. Covariates are specified in footnote a
+Tab3.NSW.2 <- lm(re78 ~ treat + age + I(age^2) + education + nodegree +
+           black + hispanic + re74 + re75, data = NSW)
+
+# Output: results for both columns
+stargazer(Tab3.NSW.1, Tab3.NSW.2, type = "text")
+```
+
+
+## Can we improve balance by matching? - Propensity score matching
+
+### 1. Calculate the propensity score
+
+```{r}
+# Logit regression with treatment as dependent variable
+prop.score.NSW <- glm(treat ~ age + married + nodegree + black + hispanic + re74 + re75,
+          family = binomial, 
+          data = NSW)
+
+NSW$ps1 <- predict(prop.score.NSW, type = "response")
+# The propensity scores for each individual are also available in: prop.score.NSW$fitted
+```
+
+
+### 2. Perform matching (select matching method)
+
+```{r}
+# In a first step, we do not need to specify the outcome variable
+matching.NSW <- Match(X = NSW$ps1, # variable you want to match on # use match to match your propensity scores
+               Tr = NSW$treat, #treatment variable indicating
+               M = 1, #default it is set like this
+               estimand = "ATT") # specify which estimand you desire
+#specifying al lot, e.g. with replacement, 1:1 or so.
+
+#here we do 1:1 matching
+```
+
+
+### 3. Check balance / overlap 
+
+```{r}
+MatchBalance(treat ~ ps1 + age + married + nodegree + black + 
+            hispanic + re74  + re75,
+            match.out = matching.NSW,
+            data = NSW)
+
+# compare the results before and after matching
+# writes the groups you want to compare
+
+# Outcome:
+# al lot of outcomes! Look at: t-test look if something looses their significance
+```
+
+```{r}
+# Visualization with ggplot
+ggplot(NSW, aes(x = ps1)) + 
+  geom_histogram() +
+  facet_grid(treat ~.) +
+  xlab("Propensity score") +
+  ylab("Count")
+```
+
+
+### 4. Estimate the treatment effect
+
+```{r}
+matching.NSW <- Match(X = NSW$ps1,
+               Tr = NSW$treat,
+               Y = NSW$re78,
+               M = 1,
+               estimand = "ATT")
+
+matching.NSW <- Match(X = NSW$ps1,
+               Tr = NSW$treat)
+
+summary(matching.NSW)
+```
+
+
+
+## Table 3, PSID1 Column 1
+
+First, we need to figure out which data set we need to work with. Dehejia and Wahba combine the treated individuals in the experimental NSW data set with the respective control data sets (e.g., PSID1). Let's do that.
+
+```{r}
+# We can append one data frame (or matrix) to another by using rbind (row bind): rbind (DATA1, DATA2).
+# We can directly specify that we just want to extract specific rows from the NSW data set: those that were treated. We can use the function "filter" (part of dplyr) to do that.
+NSW <- select(NSW, -ps1)
+psid1.comb <- rbind(filter(NSW, treat==1), psid1)
+View(psid1.comb)
+
+# Now, let's calculate the coefficient shown in columns 1 and 2 for the PSID1 row
+Tab3.psid1.1 <- lm(re78 ~ treat, data = psid1.comb)
+
+Tab3.psid1.2 <- lm(re78 ~ treat + age + I(age^2) + education + nodegree +
+           black + hispanic + re74 + re75, data = psid1.comb)
+stargazer(Tab3.psid1.1, Tab3.psid1.2, type = "text")
+```
+
+
+
+## Tasks
+
+1) Try to calculate the propensity score according to the model that Dehejia/Wahba use in Table 3 for the data PSID1 (footnote e). Then use matching (on the propensity score) to estimate an ATT. Don't worry if you don't produce the result that is shown in the table. Report the ATT in the Etherpad on ILIAS.
+
+2) Perform matching with the NSW data set and try to achieve the best balance possible (for now, it is sufficient to focus on t-test p-values). Vary the choice of variables that you use to estimate the propensity score (also think about interactions and squared terms). Also vary the arguments (methods) in the matching procedure - try out different specifications! 
+
+Report in the Etherpad: a) your propensity score models, b) the matching specifications, and c) the balancing results. Don't copy the whole MatchBalance output, just the (most relevant) t-test p-values and whether balance improved or decreased.
+
+URL to Etherpad: https://ilias.uni-mannheim.de/ilias.php?ref_id=1056719&cmd=showContent&cmdClass=ilobjetherpadlitegui&cmdNode=o5:lp&baseClass=ilObjPluginDispatchGUI
+
+
+### Task 1
+
+```{r}
+# Create additional variables that are used in the analysis, but not given in the NSW dataset
+# u74 and u74: 1 if earnings were 0 in that respective year
+psid1.comb$u74 <- ifelse(psid1.comb$re74>0, 0, 1)
+psid1.comb$u75 <- ifelse(psid1.comb$re75>0, 0, 1)
+```
+
+#### 1. Calculate the propensity score
+
+```{r}
+# To use squared terms, write, e.g.: I(age^2). Instead of just "age^2)
+
+prop.score.psid1.comb <- glm(treat ~ age + I(age^2) + education + I(education^2) + married + nodegree + black + hispanic + re74 + re75 +
+          I(re74^2) + I(re75^2) + u74*black, 
+          family = binomial, 
+          data = psid1.comb)
+
+psid1.comb$ps1 <- predict(prop.score.psid1.comb, type = "response")
+
+```
+
+
+#### 2. Perform matching on the propensity score and estimate the ATT
+
+```{r}
+
+matching.psid1.comb <- Match(X = psid1.comb$ps1, 
+               Tr = psid1.comb$treat, 
+               M = 1, 
+               estimand = "ATT") 
+
+```
+
+##### 3. Match Balance
+
+```{r}
+
+MatchBalance(treat ~ ps1 + treat + age + I(age^2) + education + I(education^2) + married + nodegree + black + hispanic + re74 + re75 +
+          I(re74^2) + I(re75^2) + u74*black,
+            match.out = matching.psid1.comb,
+            data = psid1.comb)
+
+
+```
+
+### 4. Estimate the treatment effect
+
+```{r}
+matching.psid1.comb <- Match(X = psid1.comb$ps1,
+               Tr = psid1.comb$treat,
+               Y = psid1.comb$re78,
+               M = 1,
+               estimand = "ATT")
+
+summary(matching.psid1.comb)
+```
+
+### Task 2
+
+#### Some arguments you may use for the matching procedure:
+M: how many matches, e.g., one-to-one matching (M = 1)?
+ties: if TRUE (default), multiple control matches per treated unit are possible and will be weighted (so that the weighted number of controls equals the number of treated units)
+caliper: how large is the caliper (measures in standard deviations), i.e., what is the maximum difference allowed so that two units may match?
+exact: perform exact matching (TRUE/FALSE)?
+
+
+#### 1. Calculate the propensity score
+
+```{r}
+prop.score.NSW <- glm(treat ~ age + I(age^2) + married + nodegree + black + hispanic + re74 + re75,
+          family = binomial, 
+          data = NSW)
+
+NSW$ps1 <- predict(prop.score.NSW, type = "response")
+```
+
+
+#### 2. Perform matching
+
+```{r}
+?Match
+matching.NSW <- Match(X = NSW$ps1, 
+               Tr = NSW$treat, 
+               M = 2,
+               ties = FALSE,
+               estimand = "ATT")
+
+```
+
+
+#### 3. Check balance
+
+```{r}
+MatchBalance(treat ~ ps1 + age + married + nodegree + black + 
+            hispanic + re74  + re75,
+            match.out = matching.NSW,
+            data = NSW)
+
+```
+
+
+
+Sources: 
+https://sejdemyr.github.io/r-tutorials/statistics/tutorial8.html
+https://sekhon.berkeley.edu/papers/MatchingJSS.pdf
+

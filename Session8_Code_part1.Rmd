@@ -1,0 +1,371 @@
+---
+title: "Session8_Code_part1"
+author: "Frederic Gerdon"
+date: "19 November 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# Load packages
+
+# install.packages("PanelMatch")
+
+library(dplyr)
+library(PanelMatch)
+library(stargazer)
+```
+
+Code based on: https://bookdown.org/paul/applied-causal-analysis/lab2.html
+Also check:
+* https://cran.r-project.org/web/packages/PanelMatch/vignettes/using_panelmatch.html
+* https://imai.fas.harvard.edu/research/files/tscs.pdf
+* https://github.com/insongkim/PanelMatch/wiki/Matched-Set-Objects
+
+```{r}
+# Load data
+data <- readr::read_csv(sprintf("https://docs.google.com/uc?id=%s&export=download", "1kAfm2LI7s_9b0txgmsVdZmrXoFlfJ5aJ"))
+```
+
+
+```{r}
+# Data preparation
+
+names(data) <- gsub("20", ".20", names(data))
+
+data <- data %>%
+  tidyr::pivot_longer(-idpers, names_to = "variable", values_to = "value") %>%
+  tidyr::separate(col = "variable", into = c("variable", "time"), sep = "\\.") %>% 
+  tidyr::pivot_wider(names_from = variable, values_from = value) 
+
+data <- data %>% mutate(time = as.integer(time),
+                        unit = as.integer(idpers)) %>%
+                 dplyr::select(-idpers) %>%
+                 dplyr::select(unit, time, everything())
+
+data <- data.frame(data)
+```
+ 
+ 
+## Exploring the data
+
+```{r}
+View(data)
+str(data)
+```
+
+Let's first check the treatment distribution: in which years was each individual threatened?
+
+```{r}
+DisplayTreatment(unit.id = "unit", # specify the unit id (unit number)
+                 time.id = "time", # time id, so each time unit get a section
+                 treatment = "threat", 
+                 data = data, # all arguments below are
+                              # used to fine-tune the appearance of the figure
+                 legend.position = "none",
+                 xlab = "year", 
+                 ylab = "Individual id",
+                 dense.plot = TRUE, 
+                 hide.y.axis.label = TRUE)
+
+# red: treated; blue: control; white: NA
+
+# The number of individuals that have been threatened at some point is much lower than the number of individuals that have never been threatened
+```
+
+
+```{r}
+DisplayTreatment(unit.id = "unit",
+                 time.id = "time",
+                 treatment = "threat", 
+                 data = data[1:100,], #subsetting to only get the first 100 rows in our data set!
+                 legend.position = "none",
+                 xlab = "year", 
+                 ylab = "Individual id")
+
+# Which individual would we match to ID 1, assuming that we have a lag of 3 time period?
+# - we could use here 3, 6, 19. Same treatment history for a lag of 3
+# Which individual would we match to ID 1, assuming that we have a lag of 1 time period?
+# - we could use here 25, 10, 19, 12, 6, 3
+```
+
+
+
+```{r}
+# We can also table how many times individuals indicated to have been threatened across all years
+
+table(data$threat)
+table(data$threat, data$time)
+```
+
+## Naive, pooled estimate across all years
+
+If we ignore the longitudinal structure of our data, we could just throw data from all years together and estimate the effect of threat on trust.
+
+```{r}
+fit.pooled.lm <- lm(trust ~ threat + male + income +
+                      education + age, 
+                    data = data)
+stargazer(fit.pooled.lm, 
+          type = "text")
+```
+
+
+We find a statistically significant negative effect of threat on trust in this pooled analysis. However: selection effects?
+
+
+## PanelMatch
+-> Match people based on their treatment histories in pre-specified time periods (~lags, L)
+-> also allows us to investigate different numbers of time periods that passed from treatment to outcome (~leads, F)
+
+### Steps:
+* 1. Perform matching
+* 2. Assess balance
+* 3. Estimate causal quantity (ATT)
+
+
+=========================
+
+
+## First: only matching on treatment histories
+First, we only consider the treatment histories of individuals and do not match on any additional covariates.
+
+We follow the same steps that we previously used for matching.
+
+
+## 1. Perform matching (find matched set + conduct refinement)
+We match by using the PanelMatch function. This function allows/requires us to specify a number of arguments, some of which are explained below.
+For details: `?PanelMatch`
+
+### Define time, unit, treatment, and outcome variable
+
+### Define F (lead) and L (lag)
+F: number of time periods from treatment to outcome
+L: number of previous time periods (before treatment) to be considered for matching
+
+### refinement.method
+Different matching and weighting procedures (including propensity score matching/weighting). If "none", only treatment history is matched on.
+
+### match.missing : match on NAs as well?
+If TRUE (default), treats NAs as an own value that is matched on. If FALSE, missings in treatment data are not allowed.
+
+### listwise.delete
+Listwise deletion of cases when there are NAs (default: FALSE).
+
+```{r}
+PM_results_none <- PanelMatch(time.id = "time", unit.id = "unit",
+                              treatment = "threat", outcome.var = "trust",
+                              lag = 2, lead = 0,
+                              refinement.method = "none", 
+                              data = data,
+                              match.missing = TRUE,
+                              qoi = "att",
+                              listwise.delete = FALSE) 
+
+# Extract matches
+PM_results_none
+msets_none <- PM_results_none$att
+
+summary(PM_results_none$att)
+```
+
+```{r}
+msets_none[1] # first element: treated unit and its matched control units
+
+str(msets_none[1]) # unit 1 treated in year 2008 was matched to...
+
+msets_none[1]$`1.2008`[1:10]
+
+# Quite many matches! We specified a lag of two, so it's relatively easy to find matches when - because we require identical treatment histories only for a relatively short period of time!
+```
+
+
+## 2. Check balance
+
+Check mean difference between treatment and control for each time period.
+
+```{r}
+get_covariate_balance(matched.sets = msets_none, # the object that we 
+                                                 # obtained by PanelMatch
+                      data = data,
+                      covariates = c("education", "age", "male", "income"),
+                      plot = FALSE # get "pure" values or plot
+                      )
+
+# standardized values
+# -> Without matching on covariates, the achieved balance is not very satisfying
+```
+
+## 3. Estimate causal quantity (ATT)
+
+Calculate ATT (https://paulcbauer.github.io/research_design_2020/lecture_7.html#19)
+
+```{r}
+PE_results_none <- PanelEstimate(sets = PM_results_none, data = data)
+summary(PE_results_none)
+plot(PE_results_none)
+```
+
+
+========================
+
+## PanelMatch with propensity score matching
+
+
+### 1. Perform matching
+
+#### size.match
+How many control units a treatment unit is matched to. Only needed when using matching (as specified in "refinement.method"). 
+
+```{r}
+PM_results_ps <- PanelMatch(
+  lag = 2, lead = 0,
+  time.id = "time", unit.id = "unit", 
+  treatment = "threat", outcome.var = "trust",
+  refinement.method = "ps.match",  # !
+  data = data, 
+  match.missing = FALSE,
+  covs.formula = ~ education + age + male + income, # !
+  size.match = 1, # !
+  qoi = "att"
+  )
+
+msets_ps <- PM_results_ps$att
+str(msets_ps[1])
+
+table(attr(msets_ps[[1]], 'weights')) # You don't need to understand this line of code in detail, but the output shows how many times each weight was awarded. 3986 individuals were matched in total, but as we restricted the number of matched control units, only one unit is included (and received the weight 1 - the other units received the weight 0)
+```
+
+### 2. Check balance
+
+```{r}
+get_covariate_balance(matched.sets = msets_ps,
+                      data = data,
+                      covariates = c("education", "age", "male", "income"),
+                      plot = TRUE)
+```
+
+
+### 3. Estimate causal quantity
+
+```{r}
+PE_results_ps <- PanelEstimate(sets = PM_results_ps, data = data)
+
+summary(PE_results_ps)
+plot(PE_results_ps)
+```
+
+However, we should be careful with interpreting these results as the balance is still not optimal.
+
+
+============================
+
+## PanelMatch with leads
+
+
+### 1. Perform matching
+
+### forbid.treatment.reversal
+Only relevant when lead > 0, i.e., the time period of interest for treatment and outcome are not identical (-> i.e., if the outcome of interest is in a later time period than the treatment of interest). Defines whether treatment status may change from the specified time point up until the time point in which the outcome of interest is measured.
+
+```{r}
+## Check ID 415 
+
+PM_results_F2 <- PanelMatch(
+  lag = 1, lead = 2,
+  time.id = "time", unit.id = "unit", 
+  treatment = "threat", outcome.var = "trust",
+  refinement.method = "none", 
+  data = data, 
+  match.missing = FALSE,
+  qoi = "att",
+  forbid.treatment.reversal = TRUE 
+  )
+
+msets_F2 <- PM_results_F2$att
+summary(msets_F2)
+
+str(msets_F2[1]) # ID 415 matched to ID 3, 6, ...
+```
+
+
+### 2. Check balance
+
+```{r}
+get_covariate_balance(matched.sets = msets_F2,
+                      data = data,
+                      covariates = c("education", "age", "male", "income"),
+                      plot = TRUE)
+```
+
+
+### 3. Estimate causal quantity
+
+```{r}
+PE_results_F2 <- PanelEstimate(sets = PM_results_F2, data = data)
+
+summary(PE_results_F2)
+plot(PE_results_F2)
+```
+
+We still should not put too much confidence in these results: balance far from perfect!
+
+
+
+## Tasks
+
+1) Each of you should do the Task 1 individually for five minutes, then discuss your current state of results in the group!
+a) Perform matching with a lag of 2 and a lead of 1. As a matching method, use propensity score matching for all available covariates, except for income (do not match on income). Do not match on missings and do not apply listwise deletion of cases. Do not allow for reversal of treatment. Only allow up to 10 control units to be matched to a treatment unit.
+b) After matching, check the balance (also for income) and calculate the ATT. Report your ATT estimate in the Etherpad.
+
+2) Set the lead to 0. Freely choose a value for lags (1-3).
+a) Change the matching specifications and try to achieve the best balance possible for your chosen number of lags. Choose the balance result that you deem "best" and report them in the Etherpad on ILIAS.
+b) If you still have time: Try out different number of lags with otherwise identical matching specifications that you chose in Task 2a.
+Report in the Etherpad for how many treated units a match can be found, given different values for lags (use `summary(...)`). 
+
+## Task 1
+
+```{r}
+?PanelMatch
+```
+
+
+### 1. Perform matching
+
+```{r}
+PM_results_task1 <- PanelMatch(
+  lag = ..., lead = ...,
+  time.id = "time", unit.id = "unit", 
+  treatment = "threat", outcome.var = "trust",
+  refinement.method = "...", 
+  data = data, 
+  match.missing = ...,
+  listwise.delete = ...,
+  covs.formula = ...,
+  size.match = ...,
+  forbid.treatment.reversal = ...,
+  qoi = "att" ,)
+
+msets_task1 <- PM_results_task1$att
+summary(msets_task1)
+```
+
+### 2. Check balance
+
+```{r}
+get_covariate_balance(matched.sets = ...,
+                      data = data,
+                      covariates = ...,
+                      plot = ...)
+```
+
+
+### 3. Estimate causal quantity
+
+```{r}
+PE_results_task1 <- PanelEstimate(...)
+
+summary(PE_results_task1)
+plot(PE_results_task1)
+```
+
+

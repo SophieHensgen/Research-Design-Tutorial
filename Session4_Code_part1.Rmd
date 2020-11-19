@@ -18,7 +18,7 @@ library(randomizr)
 ```
 
 ```{r}
-data <- readRDS("Session4_Data")
+data <- readRDS("Session4_Data.sec")
 
 View(data)
 ```
@@ -36,18 +36,18 @@ What is the mean value of age and the proportion of sex within treatment and con
 
 
 data %>%
-  group_by(treatment_source) %>%
-  summarise(mean.age = mean(age),
-            prop.sex = mean(sex_num))
+  group_by(treatment_source) %>% # we want the results for the treatment-sources respectively
+  summarise(mean.age = mean(age), # mean value of age per group
+            prop.sex = mean(sex_num)) # mean for the women in teh function
 ```
 
 Now we found the values. Is this difference statistically significant? How can we find this out?
 
 ```{r}
-# T-test: t.test(VARIABLE.A ~ VARIABLE.B)
+# T-test: t.test(VARIABLE.A ~ VARIABLE.B) #thats the code for the ttest, fairly simple
 
-t.test(data$age ~ data$treatment_source)
-t.test(data$sex_num ~ data$treatment_source)
+t.test(data$age ~ data$treatment_source) #significant differences for the age
+t.test(data$sex_num ~ data$treatment_source) #significant differences for the men and women
 ```
 
 Imagine we conduct this experiment for the first time, with the exact same pool of participants that is available in our data. We could randomly assign the source treatment to participants again and check whether we can achieve a better balance.
@@ -55,23 +55,24 @@ Imagine we conduct this experiment for the first time, with the exact same pool 
 ```{r}
 # Let's first reduce our data set so we only work with the relevant variables that we need right now.
 
-data.r <- select(data, id, age, sex_num, treatment_source)
+data.r <- select(data, id, age, sex_num, treatment_source) #same dataframe just less variables, those that we do not need right now
 table(data.r$treatment_source)
 
 # Now let's use the function simple_ra (package: randomizr) to randomly assign each individual to either treatment or control group (Bernoulli)
-data.r$treatment_simple <- simple_ra(N = nrow(data.r))
+data.r$treatment_simple <- simple_ra(N = nrow(data.r)) #simple_ra is used to makes a simple randomly assignment
 table(data.r$treatment_simple)
 View(data.r)
 
-t.test(data.r$age ~ data.r$treatment_simple)
+t.test(data.r$age ~ data.r$treatment_simple) #same code as above, but now we use the new treatment assignment
 t.test(data.r$sex_num ~ data.r$treatment_simple)
 
 # Completely randomized experiment
-data.r$treatment_complete <- complete_ra(N = nrow(data.r))
+data.r$treatment_complete <- complete_ra(N = nrow(data.r)) # with that we get a completely randomized experiment were there the amount of people in the groups is the same. 
 table(data.r$treatment_complete)
 
 t.test(data.r$age ~ data.r$treatment_complete)
 t.test(data.r$sex_num ~ data.r$treatment_complete)
+# what we see here, there is randomness and it could be different all the time. 
 ```
 
 
@@ -85,6 +86,8 @@ Now, let's analyze whether the source treatment (real/fake) affected the belief 
 # OLS in R: lm(DEPENDENT.VAR/OUTCOME ~ INDEPENDENT.VAR(S)/TREATMENT, data = XX)
 # Outcome: belief (belief_report_1_num)
 # Treatment: source (treatment_source)
+
+## again that is the basic code to get the lm
 
 h1a_lm <- lm(belief_report_1_num ~ treatment_source, data = data)
 
@@ -130,14 +133,28 @@ Use the function lm, but add the following argument into the brackets: subset = 
 ## Exercise 1
 
 ```{r}
+data$treatment_complete <- complete_ra(N = nrow(data)) # with that we get a completely randomized experiment were there the amount of people in the groups is the same. 
+table(data$treatment_complete)
 
+t.test(data$age ~ data$treatment_complete)
+t.test(data$sex_num ~ data$treatment_complete)
 ```
 
 
 ## Exercise 2
 
 ```{r}
+h2a_lm <- lm(share_report_1_email_num ~ treatment_source, data = data)
+h3a_lm <- lm(share_report_1_fb_num ~ treatment_source, data = data)
+h4a_lm <- lm(share_report_1_twitter_num ~ treatment_source, data = data)
+h5a_lm <- lm(share_report_1_whatsapp_num ~ treatment_source, data = data)
 
+summary(h2a_lm)
+summary(h3a_lm)
+summary(h4a_lm)
+summary(h5a_lm)
+
+stargazer(h2a_lm, h3a_lm, h4a_lm, h5a_lm, type = "text")
 ```
 
 
@@ -146,6 +163,14 @@ Use the function lm, but add the following argument into the brackets: subset = 
 ```{r}
 h1a_lm_l <- lm(belief_report_1_num ~ treatment_source, data = data,
                subset = data$age < 40)
+
+h2a_lm_l <- lm(belief_report_1_num ~ treatment_source, data = data,
+               subset = data$age >= 40 & data$age <= 70)
+
+h3a_lm_l <- lm(belief_report_1_num ~ treatment_source, data = data,
+               subset = data$age > 70)
+
+stargazer(h1a_lm_l, h2a_lm_l, h3a_lm_l, type = "text")
 ```
 
 
@@ -171,5 +196,21 @@ stargazer([MODELS SEPARATED BY COMMA],
 )
 ```{r}
 # Information on the arguments:
-?stargazer
+stargazer(h1a_lm, h2a_lm, h3a_lm, h4a_lm, h5a_lm, 
+          type = "text", 
+          out = "hn_lm.html",
+          title = "Linear Regression: Source", 
+          digits = 2, 
+          dep.var.caption = "Dependent Variables for Report 1",
+          dep.var.labels = c("Belief", "Share E-Mail", "Share Facebook", "Share Twitter", "Share Whatsapp"),
+          model.numbers = FALSE, 
+          notes= "Belief measured on 7-point scale (0-6) nd sharing intention as a binary choice (0-1).",
+          notes.append = TRUE, 
+          covariate.labels = c("Treat.: Source", "Constant"),
+          omit.stat = c("f", "ser", "adj.rsq"),
+          align = FALSE,
+          star.cutoffs = c(0.05, 0.01, 0.001),
+          star.char = c(c("*", "**", "***")))
+
+
 ```

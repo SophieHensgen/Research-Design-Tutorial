@@ -1,0 +1,314 @@
+---
+title: "Session6_Code_part1"
+author: "Frederic Gerdon"
+date: "5 November 2020"
+output: html_document
+---
+
+```{r include=FALSE}
+# Make sure to have all packages installed!
+
+library(haven)
+library(Matching)
+library(stargazer)
+library(tidyverse)
+library(rgenoud)
+```
+
+```{r}
+# Load data
+NSW <- read_stata("nsw_dw.dta")
+```
+
+
+### Genetic Matching
+We can let an algorithm do the work the weight the covariates in order to achieve the best balance possible. I will just show you the very basic structure of how to do genetic matching, which is analogous to what we did last week. This is a very simple version of genetic matching, check ?GenMatch for additional specifications, e.g., pop.size. Note that there is an element of randomness in the procedure of genetic matching.
+
+### 1. Perform genetic matching
+
+```{r include=FALSE}
+View(NSW)
+
+gen.matched <- GenMatch(X = cbind(NSW$age, NSW$education, NSW$nodegree,
+                                 NSW$black, NSW$hispanic),
+                        Tr = NSW$treat) # new <ddition add those balance, everything else we already did
+
+gen.results <- Match(X = cbind(NSW$age, NSW$education, NSW$nodegree,
+                                 NSW$black, NSW$hispanic),
+               Tr = NSW$treat,
+               weight.matrix = gen.matched)
+```
+
+### 2. Check balance
+
+```{r}
+MatchBalance(treat ~ NSW$age + NSW$education + NSW$nodegree + NSW$black +
+               NSW$hispanic,
+            match.out = gen.results, # compare results before and after matching
+            data = NSW)
+```
+
+### 3. Estimate the treatment effect
+
+```{r}
+gen.results <- Match(X = cbind(NSW$age, NSW$education, NSW$nodegree,
+                                 NSW$black, NSW$hispanic),
+               Tr = NSW$treat,
+               Y = NSW$re78,
+               Weight.matrix = gen.matched)
+
+summary(gen.results)
+```
+
+
+
+## Matching without propensity scores and genetic matching: exact and inexact matching on covariates
+
+The propensity score allows to match individuals based on a large number of covariates without running into problems related to dimensionality, i.e., the problem of lacking common support in covariates between treatment and control groups. However, particularly when the number of variables to match on is small, and if these variables contain only a few categories, we can - also depending on sample size - consider matching directly (and exactly) on at least some of the covariates.
+
+
+### 1. Perform exact matching on selected variables
+
+```{r}
+matching.exact <- Match(X = cbind(NSW$black, NSW$hispanic,
+                            NSW$married, NSW$nodegree),
+               Tr = NSW$treat,
+               exact = TRUE,
+               estimand = "ATT")
+
+summary(matching.exact)
+```
+
+```{r}
+# Who was matched?
+str(matching.exact)
+
+found.matches.exact <- cbind(matching.exact$index.treated,
+                       matching.exact$index.control)
+View(found.matches.exact)
+NSW[c(1,198),]
+NSW[c(2,194),]
+```
+
+```{r}
+# Who was not matched?
+str(matching.exact)
+NSW[c(10,124),]
+
+filter(NSW, married == 1 & black == 0 & hispanic == 0 & nodegree == 0)
+# There are only two individuals with exactly these characteristics, and both are in the treatment group
+```
+
+### 2. Check balance
+
+```{r}
+MatchBalance(treat ~ black + hispanic + married + nodegree,
+            match.out = matching.exact,
+            data = NSW)
+```
+
+### 3. Estimate the treatment effect
+
+```{r}
+matching.exact <- Match(X = cbind(NSW$black, NSW$hispanic,
+                            NSW$married, NSW$nodegree),
+               Tr = NSW$treat,
+               Y = NSW$re78,
+               exact = TRUE,
+               estimand = "ATT")
+
+summary(matching.exact)
+```
+
+
+
+## Inexact matching using calipers
+It will be hard to find exact matches on, e.g., age (in years) and education (in years) simultaneously for all treated individuals in the sample. As the next chunks show, exact matching on age and education leads to not every treated individual being matched to an individual in the control group.
+
+### Trying to perform exact matching on continuous variables in the NSW data set
+
+```{r}
+matching.exact2 <- Match(X = cbind(NSW$age, NSW$education),
+               Tr = NSW$treat,
+               Y = NSW$re78,
+               exact = TRUE,
+               estimand = "ATT")
+
+summary(matching.exact2)
+# 49 individuals were dropped due to exact matching
+```
+
+```{r}
+# Who was matched?
+str(matching.exact2)
+
+found.matches.exact2 <- cbind(matching.exact2$index.treated,
+                              matching.exact2$index.control)
+View(found.matches.exact2)
+NSW[c(2,373),]
+```
+
+```{r}
+# Who was not matched?
+NSW[1,]
+
+filter(NSW, age == 37 & education == 11 & treat == 0)
+```
+
+
+### 1. Perform matching with calipers on selected variables
+
+Instead, we can specify how similar two observations need to be on specified variables. To this end, we use calipers.
+
+```{r}
+## "The caliper is interpreted to be in standardized units. For example, caliper=.25 means that all matches not equal to or within .25 standard deviations of each covariate in X are dropped."
+
+matching.NSW.cal <- Match(X = cbind(NSW$age, NSW$education),
+               Tr = NSW$treat,
+               caliper = 0.5, # what is the maximum differnece allowed in matching
+               estimand = "ATT")
+
+summary(matching.NSW.cal)
+```
+
+```{r}
+# Who was matched?
+str(matching.NSW.cal)
+NSW[c(matching.NSW.cal$index.treated[1], matching.NSW.cal$index.control[1]),]
+NSW[c(1,412),] #indicate which number we want to see
+
+```
+
+### 2. Check balance
+
+```{r}
+MatchBalance(treat ~ age + education,
+            match.out = matching.NSW.cal,
+            data = NSW)
+```
+
+### 3. Estimate the treatment effect
+
+```{r}
+matching.NSW.cal <- Match(X = cbind(NSW$age, NSW$education),
+               Tr = NSW$treat,
+               Y = NSW$re78,
+               caliper = 0.5,
+               estimand = "ATT")
+
+summary(matching.NSW.cal)
+
+```
+
+
+## Tasks
+
+1) Using the code on caliper matching above, find the approximate distance/caliper value at which we achieve "perfect" balance with respect to age AND education. Spend max. five minutes on this task.
+
+2) Perform exact and caliper matching using all of the following variables simultaneously (in one single matching procedure): age, education, black, hispanic, married, nodegree. For each variable, choose the appropriate type of matching/distance (make sure that not more than treated 40 individuals will be excluded by matching). Note the help page on ?Match and check the information on "caliper": "The exact option takes precedence over the caliper option". However, there's a "workaround" to solve this problem! (You find hints at the end of this file.)
+
+3) Bonus task, if you still have time: Take the following matching results data we crated above: "matching.NSW.cal". Create a table/matrix/data frame that shows the index numbers of the individuals matched to each other, as well as how much weight is given to each matched observation (hint: check the structure of matching.NSW.cal). Make sure to understand how the weights are chosen.
+
+
+
+### Task 1
+
+#### 1. Perform matching
+
+```{r}
+matching.NSW.cal <- Match(X = cbind(NSW$age, NSW$education),
+               Tr = NSW$treat,
+               caliper = 0.1, # what is the maximum differnece allowed in matching
+               estimand = "ATT")
+
+summary(matching.NSW.cal)
+
+```
+
+#### 2. Check balance
+
+```{r}
+MatchBalance(treat ~ age + education,
+            match.out = matching.NSW.cal,
+            data = NSW)
+
+```
+
+
+### Task 2
+
+2) Perform exact and caliper matching using all of the following variables simultaneously (in one single matching procedure): age, education, black, hispanic, married, nodegree. For each variable, choose the appropriate type of matching/distance (make sure that not more than treated 40 individuals will be excluded by matching). 
+
+Note the help page on ?Match and check the information on "caliper": "The exact option takes precedence over the caliper option". However, there's a "workaround" to solve this problem! (You find hints at the end of this file.)
+
+#### 1. Perform matching
+
+```{r}
+
+matching.NSW.cal <- Match(X = cbind(NSW$age, NSW$education, NSW$black, NSW$hispanic, NSW$married, NSW$nodegree),
+               Tr = NSW$treat,
+               caliper = c(0.5, 0.5, 0, 0, 0, 0), #standard deviation, state 0 to become perfect matching
+               estimand = "ATT")
+
+summary(matching.NSW.cal)
+
+```
+
+#### 2. Check balance
+
+```{r}
+MatchBalance(treat ~ age + education + black + hispanic + married + nodegree,
+            match.out = matching.NSW.cal,
+            data = NSW)
+```
+
+#### 3. Estimate the treatment effect
+
+```{r}
+matching.NSW.cal <- Match(Y = NSW$re78, X = cbind(NSW$age, NSW$education, NSW$black, NSW$hispanic, NSW$married, NSW$nodegree),
+               Tr = NSW$treat,
+               #Y = NSW$re78, #has to be added
+               caliper = c(0.6, 0.5, 0, 0, 0, 0), #the balance will not be perfect anymore as sd is now 0.5
+               estimand = "ATT")
+
+summary(matching.NSW.cal)
+
+MatchBalance(treat ~ age + education + black + hispanic + married + nodegree,
+            match.out = matching.NSW.cal,
+            data = NSW)
+```
+
+
+### Task 3
+
+3) Bonus task, if you still have time: Take the following matching results data we crated above: "matching.NSW.cal". Create a table/matrix/data frame that shows the index numbers of the individuals matched to each other, as well as how much weight is given to each matched observation (hint: check the structure of matching.NSW.cal). Make sure to understand how the weights are chosen.
+
+
+```{r}
+
+# look at that again!!
+
+treated_index <- c()
+control_index <- c()
+weights <- c()
+
+
+match.weights <-  cbind(matching.NSW.cal$index.treated,
+                        matching.NSW.cal$index.dropped,
+                        matching.NSW.cal$index.control)
+
+
+
+
+
+```
+
+
+
+
+
+## Hints  for task 1:
+Hint 1: Remember: You can specify the maximum distance for each variable separately.
+
+Hint 2: What is the distance between two units that you want to exactly match on (with respect to one specific variable)?
+

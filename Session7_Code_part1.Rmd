@@ -1,0 +1,208 @@
+---
+title: "Session7_Code"
+author: "Frederic Gerdon"
+date: "12 November 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+```
+
+
+```{r}
+# Load data
+
+data <- read.table("public.dat")
+
+View(data)
+```
+
+
+## Data preparation
+
+We cannot infer the content of the variables from their names, and some entries look rather strange. Let's give names to the variables first and recode some variables, if necessary.
+
+```{r}
+# Change names -> we can open the "codebook" file to learn what's in the data set. You can open the file with, e.g., the Windows Editor
+
+data <- data %>%
+  rename(store_id = V1,
+         state = V4,
+         emp_ft.0 = V12, # number of full-time employees, first interview
+         emp_pt.0 = V13, # number of part-time employees, first interview
+         n_mgsr.0 = V14, # number of managers, first interview
+         emp_ft.1 = V32, # number of full-time employees, second interview
+         emp_pt.1 = V33, # number of part-time employees, second interview
+         n_mgsr.1 = V34 # number of managers, second interview
+         )
+
+data <- data %>%
+  select(store_id, state,
+         emp_ft.0, emp_pt.0, n_mgsr.0,
+         emp_ft.1, emp_pt.1, n_mgsr.1)
+
+str(data$state)
+data$state.f <- factor(data$state, labels = c("PA", "NJ"))
+str(data$state.f)
+
+```
+
+## DiD using means
+
+Now let's find out whether the raise of minimum wages in New Jersey affected employment in fast food restaurants. Using DiD, Card/Krueger chose Pennsylvania as a control group.
+Table 3 shows employment in NJ and PA before and after the raise of the minimum wage in full-time equivalents (FTE). Therefore, we first need to calculate the FTE for each store before and after the raise.
+
+```{r}
+# Add: full-time employees, part-time employees (counted as half a FTE), and managers for each store (row)
+
+# FTE before
+for(i in 1:nrow(data)){
+  data$FTE.0[i] <- data$emp_ft.0[i] + # Full-time employees
+    0.5*(data$emp_pt.0[i]) + # plus part-time employees counted as 0.5
+    data$n_mgsr.0[i] # plus number of managers
+}
+
+str(data$emp_ft.0)
+```
+
+
+```{r}
+data$emp_ft.0 <- as.numeric(data$emp_ft.0)
+data$emp_pt.0 <- as.numeric(data$emp_pt.0)
+data$n_mgsr.0 <- as.numeric(data$n_mgsr.0)
+data$emp_pt.1 <- as.numeric(data$emp_pt.1)
+data$emp_ft.1 <- as.numeric(data$emp_ft.1)
+data$n_mgsr.1 <- as.numeric(data$n_mgsr.1)
+
+# Alternatively, we could have used a for-loop
+
+
+# FTE before
+for(i in 1:nrow(data)){
+  data$FTE.0[i] <- data$emp_ft.0[i] + # Full-time employees
+    0.5*(data$emp_pt.0[i]) + # plus part-time employees counted as 0.5
+    data$n_mgsr.0[i] # plus number of managers
+}
+
+
+# FTE after
+for(i in 1:nrow(data)){
+  data$FTE.1[i] <- data$emp_ft.1[i] +
+    0.5*(data$emp_pt.1[i]) +
+    data$n_mgsr.1[i]
+}
+```
+
+
+Now we know the FTE employment for each fast food restaurant in our data.
+Based on FTE employment, we can estimate the DiD effect by calculating four values (-> slide 7). To this end, we get the means of employment for NJ and PA for before and after the raise.
+
+```{r}
+NJ.before <- mean(data$FTE.0[data$state.f=="NJ"], na.rm=TRUE)
+NJ.after <- mean(data$FTE.1[data$state.f=="NJ"], na.rm=TRUE)
+NJ.change <- NJ.after - NJ.before
+
+
+PA.before <- mean(data$FTE.0[data$state.f=="PA"], na.rm=TRUE)
+PA.after <- mean(data$FTE.1[data$state.f=="PA"], na.rm=TRUE)
+PA.change <- PA.after - PA.before
+
+NJ.change
+PA.change
+
+DiD.means <- NJ.change - PA.change
+DiD.means
+
+# go back to slides for substantive interpretation: how much did employment change in NJ? How much in PA? How much do these changes differ between states?
+# if assumptions of DiD hold, then we find an increase in employment attributable to the minimum wage raise. Card/Krueger conduct many additional analysis that try to show that the effect is indeed attributable to the wage raise.
+```
+
+
+```{r}
+# An alternative way to calculate changes, using dplyr:
+changes <- data %>%
+  group_by(state.f) %>%
+  summarise(change = mean(FTE.1, na.rm=TRUE) - mean(FTE.0, na.rm=TRUE))
+
+changes
+changes$change[2] - changes$change[1]
+```
+
+
+## DiD using regression (lm)
+
+In the lecture, you also learnt how to do DiD in a regression format, which is a common way to conduct DiD analysis. Let's try to calculate the DID value we found above (2.75) by using regressions. How?
+`y = b1 + b2*time + b3*treated + b4*(time*treated)` (I'm dropping subscripts etc. at this point)
+(-> lecture slide 17, https://paulcbauer.github.io/research_design_2020/lecture_6.html#17)
+
+That means we only need three variables:
+1. outcome (FTE)
+2. a time indicator (0/1)
+3. an indicator for the treatment group (NJ vs. PA)
+
+Let's check our data. We have the outcome (in two columns), we have a "state" variable - but we don't have an indicator for time. 
+-> We need to turn the data into long format.
+
+```{r}
+data.long <- reshape(data, varying = c("emp_ft.0", "emp_pt.0", "n_mgsr.0",
+                          "emp_ft.1", "emp_pt.1", "n_mgsr.1",
+                          "FTE.0", "FTE.1"),
+                      direction = "long")
+
+View(data.long)
+
+## Also check out the pivot_longer and pivot_wider functions that are part of the tidyverse!
+```
+
+
+## Tasks
+
+1) Using the "lm" function and the DiD formula from above, estimate the DiD effect of the raise of minimum wages in New Jersey. The result should be the same as the result obtained by the previous approach that uses means.
+
+2) Interpret each coefficient of the model from Task 1. Which differences between groups do these coefficients reflect (think about the groups shown on slide 7)? Write down one or two sentences for each coefficient.
+
+3) Calculate the value of the "state" coefficient by only using means (similar to as we did above). Remember that you can subset data sets by using square brackets (`[]`).
+
+4) If you still have time: Turn "data.long" back into wide format and call the new object "data.wide". Check `?reshape` for the necessary argument(s). Then conduct a DiD regression with the formula for *wide* format data (https://paulcbauer.github.io/research_design_2020/lecture_6.html#19).
+
+
+### Task 1
+
+```{r}
+DiD.model <- lm(FTE ~ time + state + time*state, data = data.long)
+
+DiD.model
+```
+
+
+### Task 2
+
+- For PA at time point 1 the employment decreases about 2.166. 
+- For NJ at time point 0 the employment is 2.89 lower compared to PA
+- diff-in-diffs = 2.754
+
+
+### Task 3
+
+```{r}
+state.diff.0 <- ...
+```
+
+
+### Task 4
+
+```{r}
+# Reshape
+data.wide <- reshape(data.long, varying = c("FTE", "state"), direction = "wide")
+
+```
+
+```{r}
+# DiD regression using wide format
+# https://paulcbauer.github.io/research_design_2020/lecture_6.html#19
+
+model.wide <- lm(...)
+model.wide
+```
+
