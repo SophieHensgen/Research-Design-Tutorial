@@ -1,0 +1,298 @@
+---
+title: "Session10_Code"
+author: "Frederic Gerdon"
+date: "3 December 2020"
+output: html_document
+---
+
+# This code is largely based on: Cattaneo, Matias D., Nicolás Idrobo, and Rocío Titiunik (2020): A Practical Introduction to Regression Discontinuity Designs: Foundations. Elements in Quantitative and Computational Methods for the Social Sciences, Cambridge: Cambridge University Press.
+
+
+```{r include=FALSE}
+# Make sure to have all packages installed!
+
+#install.packages("rdrobust")
+#install.packages("rddensity")
+
+library(stargazer)
+library(tidyverse)
+library(rdrobust)
+library(rddensity)
+```
+
+```{r}
+# Load data
+data <- read.csv("CIT_2019_Cambridge_polecon.csv")
+
+View(data)
+```
+
+
+## Data preparation 
+
+```{r}
+# Label variables
+data <- data %>%
+  rename(treat = T) %>%
+  mutate(Y = Y/100)
+
+summary(data)
+```
+
+
+# Table 2, first column: OLS, no covariates, all cases.
+
+```{r}
+mean(data$Y, na.rm = TRUE)
+
+col1 <- lm(Y ~ treat, data = data)
+summary(col1)
+```
+
+
+
+## Sharp RD estimation (Catteneo et al. 2019)
+
+The basic idea is as follows. We fit two regression lines/curves: one for the cases below the cutoff (left side), and one for the cases above the cutoff (right side).
+The RD effect then is difference between the intercepts of the two models.
+
+We use polynomials to fit the data as close as possible (x^2, x^3...). Still, we can decide to have a function that is linear (just "x", no higher-order polynomials).
+
+We need to think about and select values/approaches for the following points:
+- Bandwidth: Which cases do we include in our analysis, i.e., how far are cases allowed to be away from the cutoff? Manual selection, automated selection?
+- Polynomial order: How far do we want to go (x^2, x^3...)? Higher values fits curve closer to the data, but problem of overfitting (Catteneo et al. 2019:45)
+- Weighting: How do we want to weight observations? Equally? Use kernel functions to weight observation depending on their proximity to the cutoff (Catteneo et al. 2019:43)?
+
+
+## For intuition: just using two linear regressions for the left and right side of the cutoff
+
+```{r}
+# Choosing a bandwidth of 20
+# First, regression on the left side of the cutoff (control)
+left <- lm(Y ~ X,
+           subset = X < 0 & X >= -20, # Cases within a 20-point range below cutoff
+           data = data)
+
+summary(left)
+
+# Second, regression on the right side of the cutoff (treatment)
+right <- lm(Y ~ X,
+           subset = X >= 0 & X <= 20, # Cases within a 20-point range above cutoff
+           data = data)
+
+summary(right)
+
+# RD estimator:
+right$coefficients[1] - left$coefficients[1]
+```
+
+## Plot
+
+```{r}
+# We will get back to this piece of code soon. For now, let's focus on the output
+plot.a <-  rdplot(y = data$Y,
+             x = data$X,
+             kernel = "uniform",
+             p = 1,
+             h = 20)
+```
+
+
+## Using rdrobust to estimate RD effect
+
+```{r}
+model1 <- rdrobust(y = data$Y, # outcome
+                  x = data$X, # running/score variable
+                  kernel = "uniform", # equal weights for each observation
+                  p = 1, # number/order of polynomials. 1 = linear
+                  h = 20 # bandwidth
+                  ) # use this!
+
+summary(model1)
+# Interpretation?
+```
+
+## Single linear model with interaction term
+
+```{r}
+m3 <- lm(Y ~ X + treat + treat*X,
+         subset = X >= -20 & X <= 20,
+         data = data)
+summary(m3)
+```
+
+For correct standard errors, we should use rdrobust.
+
+
+
+## Automated selection of bandwidth
+
+```{r}
+model.2 <- rdrobust(y = data$Y, # outcome
+                  x = data$X, # running/score variable
+                  kernel = "uniform", # 
+                  p = 1, # number/order of polynomials. 1 = linear
+                  bwselect = "mserd" # Different methods available!
+                  )
+
+summary(model.2)
+# Different bandwidth (h = 17.24) chosen this time!
+```
+
+
+## Additional specifiations: covariates and clustered standard errors
+
+```{r}
+model.vars <- rdrobust(y = data$Y,
+                  x = data$X,
+                  kernel = "uniform", 
+                  p = 1, 
+                  bwselect = "mserd",
+                  covs = data$age19,
+                  cluster = data$prov_num, # add clustered standard errors, by province
+                  )
+```
+
+
+
+# Check assumptions/robustness
+
+## Figure 2: Density graph: any "jumps" at the threshold (sorting effects)?
+
+```{r}
+hist(data$X, breaks = 150)
+abline(v = 0)
+```
+
+## Check density: number of treated and control around cutoff (no sorting?)
+
+```{r}
+density <-  rddensity(data$X)
+summary(density)
+
+# -> no statistically significant differences in the number of treated and control units around the cutoff (p value: 0.1634)
+
+# why is this interesting? Sorting effects, try to go under the threshold (just below)
+```
+
+
+## No jumps around cutoff for covariates?
+
+Are there any jumps in covariates around the cutoff value? There should be none!
+We basically conduct a simple RD analysis for each of the covariates:
+
+```{r}
+logpop <- rdrobust(data$lpop1994, data$X)
+summary(logpop)
+
+age60 <- rdrobust(data$ageshr60, data$X)
+summary(age60)
+
+age19 <- rdrobust(data$ageshr19, data$X)
+summary(age19)
+
+gender <- rdrobust(data$sexr, data$X)
+summary(gender)
+
+center <- rdrobust(data$merkezi, data$X)
+summary(center)
+```
+
+
+# Placeb cutoffs: no discontinuities at other fictitious cutoff values?
+
+```{r}
+model.c0 <- rdrobust(y = data$Y,
+                  x = data$X,
+                  kernel = "uniform",
+                  c = 0,
+                  p = 1, 
+                  h = 24)
+
+model.c10 <- rdrobust(y = data$Y,
+                  x = data$X,
+                  kernel = "uniform",
+                  c = 10,
+                  h = 24,
+                  subset = data$X >= 0)
+
+model.c20 <- rdrobust(y = data$Y,
+                  x = data$X,
+                  kernel = "uniform",
+                  c = 20,
+                  h = 24,
+                  subset = data$X >= 0)
+
+model.cmin20 <- rdrobust(y = data$Y,
+                  x = data$X,
+                  kernel = "uniform",
+                  c = -20,
+                  h = 24,
+                  subset = data$X <= 0)
+
+summary(model.c0)
+summary(model.c10)
+summary(model.c20)
+summary(model.cmin20)
+```
+
+
+# Tasks
+
+Work on Task 1 (and, if you have time, Task 2a)) for 10 minutes. Then compare your results in breakout rooms and do the tasks together.
+
+1a) Go to Panel A in Table 3 in Meyersson 2014 (page 250). Starting from the rdrobust example below: Which arguments would you need to change or add in order to calculate all the values in this table? Also consider the notes below the table!
+1b) Calculate the values of Panel A for column 4, except for the first row (-> calculate four values in total). Don't worry if you do not always get the same results as shown in the table.
+2a) Run the RD model as shown below. Interpret the results of this model (substantively). Create an RD plot for this model and link the model results to the appearance of the plot.
+2b) Change the specifications of the model as you like (p, h, covariates, weighting method, ...). How do you explain the differences you find between the models?
+
+
+## Task 1a)
+
+```{r}
+model.col4.p0 <- rdrobust(y = data$Y,
+                  x = data$X,
+                  kernel = "uniform",
+                  p = 1, 
+                  h = 10,
+                  covs = covs)
+                  #cluster = data$prov_num)
+
+summary(model.col4.p0)
+
+```
+
+
+## Task 1b)
+
+```{r}
+# Covariates:
+covs <- cbind(data$vshr_islam1994, data$partycount,
+                               data$ageshr19, data$ageshr60,
+                               data$sexr, data$lpop1994,
+                               data$buyuk, data$merkezi,
+                               data$subbuyuk, data$merkezp)
+```
+
+
+## Task 2a)
+
+```{r}
+task.2 <- rdrobust(y = data$Y,
+       x = data$X,
+       kernel = "uniform",
+       p = 1, 
+       h = 30)
+
+summary(task.2)
+```
+
+```{r}
+# RD plot here
+```
+
+## Task 2b)
+
+Various options!
+
+
